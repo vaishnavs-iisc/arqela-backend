@@ -1,6 +1,6 @@
 """
 LangGraph node functions for the Hypothesis Tester workflow.
-Pure functions — no HTTP, no DB imports.
+Pure functions — no HTTP, no DB imports. Multi-LLM setup using Gemini & Cohere.
 """
 import json
 import logging
@@ -15,10 +15,13 @@ litellm.drop_params = True
 logger = logging.getLogger("HypothesisNodes")
 
 
-@retry_on_exception(retries=2, backoff=1.0)
-def safe_llm_completion(*args, **kwargs):
-    """litellm.completion with automatic retry and parameter safety."""
-    return litellm.completion(*args, **kwargs)
+def safe_llm_completion(model: str, messages: list, fallback_model: str = "gemini/gemini-2.5-flash", **kwargs):
+    """Call specialized LLM model with automatic fallback if primary model errors or times out."""
+    try:
+        return litellm.completion(model=model, messages=messages, timeout=15, **kwargs)
+    except Exception as e:
+        logger.warning(f"Primary model '{model}' failed: {e}. Falling back to '{fallback_model}'.")
+        return litellm.completion(model=fallback_model, messages=messages, timeout=15, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -66,8 +69,8 @@ def get_domain_specific_instructions(domain: str) -> str:
 # ---------------------------------------------------------------------------
 
 def analyze_hypothesis_node(state: HypothesisState) -> dict:
-    """Deconstruct the hypothesis into core claims, assumptions, causal chain, and search keywords."""
-    logger.info("Entering analyze_hypothesis_node")
+    """Deconstruct the hypothesis using Gemini 2.5 Flash for structured JSON breakdown."""
+    logger.info("Entering analyze_hypothesis_node (Gemini)")
     hypothesis = state["raw_hypothesis"]
     domain = state["academic_domain"]
     logs = ["[Node: Theory Breakdown] Deconstructing the core scientific claims."]
@@ -88,7 +91,7 @@ def analyze_hypothesis_node(state: HypothesisState) -> dict:
 
     try:
         response = safe_llm_completion(
-            model=config.PRIMARY_MODEL,
+            model=config.THEORY_MODEL,
             messages=[{"role": "user", "content": prompt}],
         )
         content = response.choices[0].message.content.strip()
@@ -119,8 +122,8 @@ def analyze_hypothesis_node(state: HypothesisState) -> dict:
 
 
 def advocate_node(state: HypothesisState) -> dict:
-    """Gather and synthesise supporting literature for the hypothesis."""
-    logger.info("Entering advocate_node")
+    """Gather supporting literature and synthesise with Cohere Command-R Plus."""
+    logger.info("Entering advocate_node (Cohere Command-R Plus)")
     core_claim = state["core_claim"]
     keywords = state["advocate_keywords"]
     domain = state["academic_domain"]
@@ -150,11 +153,11 @@ def advocate_node(state: HypothesisState) -> dict:
 
     try:
         response = safe_llm_completion(
-            model=config.PRIMARY_MODEL,
+            model=config.ADVOCATE_MODEL,
             messages=[{"role": "user", "content": prompt}],
         )
         synthesis = response.choices[0].message.content.strip()
-        logs.append("[Supporting Evidence Gatherer] Compiled supporting scientific briefs.")
+        logs.append("[Supporting Evidence Gatherer] Compiled supporting scientific briefs via Cohere.")
         return {"advocate_sources": all_search_data, "supporting_evidence": synthesis, "agent_logs": logs}
     except Exception as e:
         logger.error(f"Advocate node failed: {e}")
@@ -166,8 +169,8 @@ def advocate_node(state: HypothesisState) -> dict:
 
 
 def adversary_node(state: HypothesisState) -> dict:
-    """Gather and synthesise counter-arguments, confounders, and limitations."""
-    logger.info("Entering adversary_node")
+    """Gather counter-arguments and synthesise with Cohere Command-R Plus."""
+    logger.info("Entering adversary_node (Cohere Command-R Plus)")
     core_claim = state["core_claim"]
     keywords = state["adversary_keywords"]
     domain = state["academic_domain"]
@@ -197,11 +200,11 @@ def adversary_node(state: HypothesisState) -> dict:
 
     try:
         response = safe_llm_completion(
-            model=config.PRIMARY_MODEL,
+            model=config.ADVERSARY_MODEL,
             messages=[{"role": "user", "content": prompt}],
         )
         synthesis = response.choices[0].message.content.strip()
-        logs.append("[Skeptic Auditor] Compiled counter-arguments and methodological critiques.")
+        logs.append("[Skeptic Auditor] Compiled counter-arguments via Cohere.")
         return {"adversary_sources": all_search_data, "counter_evidence": synthesis, "agent_logs": logs}
     except Exception as e:
         logger.error(f"Adversary node failed: {e}")
@@ -213,8 +216,8 @@ def adversary_node(state: HypothesisState) -> dict:
 
 
 def arbiter_node(state: HypothesisState) -> dict:
-    """Synthesise both sides and produce a quantified evaluation + validation protocol."""
-    logger.info("Entering arbiter_node")
+    """Synthesise both sides and produce quantified evaluation via Gemini 2.5 Flash."""
+    logger.info("Entering arbiter_node (Gemini)")
     core_claim = state["core_claim"]
     adv_brief = state["supporting_evidence"]
     opp_brief = state["counter_evidence"]
@@ -255,7 +258,7 @@ def arbiter_node(state: HypothesisState) -> dict:
 
     try:
         response = safe_llm_completion(
-            model=config.PRIMARY_MODEL,
+            model=config.ARBITER_MODEL,
             messages=[{"role": "user", "content": prompt}],
         )
         content = response.choices[0].message.content.strip()
@@ -264,7 +267,7 @@ def arbiter_node(state: HypothesisState) -> dict:
         elif content.startswith("```"):
             content = content.split("```")[1].split("```")[0].strip()
         result = json.loads(content)
-        logs.append("[Scientific Arbiter] Finalised peer evaluation and validation protocol.")
+        logs.append("[Scientific Arbiter] Finalised peer evaluation and validation protocol via Gemini.")
         return {
             "vulnerability_score": result.get("vulnerability_score", defaults["vulnerability_score"]),
             "empirical_evidence_score": result.get("empirical_evidence_score", defaults["empirical_evidence_score"]),

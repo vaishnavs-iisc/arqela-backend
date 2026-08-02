@@ -10,11 +10,16 @@ class Config:
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
     SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
     
-    # Model selections (Gemini 2.5 Flash is ultra-fast, robust, and handles structured output natively)
+    # Multi-LLM Role Assignments across Agent Nodes
+    THEORY_MODEL: str = os.getenv("THEORY_MODEL", "gemini/gemini-2.5-flash")
+    ADVOCATE_MODEL: str = os.getenv("ADVOCATE_MODEL", "cohere/command-r-plus-08-2024")
+    ADVERSARY_MODEL: str = os.getenv("ADVERSARY_MODEL", "cohere/command-r-plus-08-2024")
+    ARBITER_MODEL: str = os.getenv("ARBITER_MODEL", "gemini/gemini-2.5-flash")
+    
     PRIMARY_MODEL: str = os.getenv("PRIMARY_MODEL", "gemini/gemini-2.5-flash")
     JUDGE_MODEL: str = os.getenv("JUDGE_MODEL", "gemini/gemini-2.5-flash")
     EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "gemini/gemini-embedding-001")
-    CHAT_MODEL: str = os.getenv("CHAT_MODEL", "gemini/gemini-2.5-flash")
+    CHAT_MODEL: str = os.getenv("CHAT_MODEL", "cohere/command-r-plus-08-2024")
     
     # Data Dimensions
     VECTOR_DIMENSION: int = 3072
