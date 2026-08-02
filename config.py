@@ -10,19 +10,20 @@ class Config:
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
     SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
     
-    # 3-LLM Tri-Engine Architecture:
-    # 1. Theory Breakdown & Arbiter -> Gemini 2.5 Flash
-    # 2. Advocate Node -> Cohere Command-R Plus
-    # 3. Adversary Node -> Groq Llama 3.3 70B (with Cohere/Gemini fallback)
-    THEORY_MODEL: str = os.getenv("THEORY_MODEL", "gemini/gemini-2.5-flash")
+    # Architecture:
+    # - Cohere Command-R Plus: Research, paper citations, theory breakdown, advocate, adversary, arbiter
+    # - Groq Llama-3.3 70B: Fast AI Copilot chat & tasks
+    # - Gemini 2.5 Flash: Reserved strictly as secondary/tertiary fallback
+    # - Gemini Embedding 001: 3072-dimensional vector embeddings
+    THEORY_MODEL: str = os.getenv("THEORY_MODEL", "cohere/command-r-plus-08-2024")
     ADVOCATE_MODEL: str = os.getenv("ADVOCATE_MODEL", "cohere/command-r-plus-08-2024")
-    ADVERSARY_MODEL: str = os.getenv("ADVERSARY_MODEL", "groq/llama-3.3-70b-versatile")
-    ARBITER_MODEL: str = os.getenv("ARBITER_MODEL", "gemini/gemini-2.5-flash")
+    ADVERSARY_MODEL: str = os.getenv("ADVERSARY_MODEL", "cohere/command-r-plus-08-2024")
+    ARBITER_MODEL: str = os.getenv("ARBITER_MODEL", "cohere/command-r-plus-08-2024")
     
-    PRIMARY_MODEL: str = os.getenv("PRIMARY_MODEL", "gemini/gemini-2.5-flash")
-    JUDGE_MODEL: str = os.getenv("JUDGE_MODEL", "gemini/gemini-2.5-flash")
+    PRIMARY_MODEL: str = os.getenv("PRIMARY_MODEL", "cohere/command-r-plus-08-2024")
+    JUDGE_MODEL: str = os.getenv("JUDGE_MODEL", "cohere/command-r-plus-08-2024")
     EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "gemini/gemini-embedding-001")
-    CHAT_MODEL: str = os.getenv("CHAT_MODEL", "cohere/command-r-plus-08-2024")
+    CHAT_MODEL: str = os.getenv("CHAT_MODEL", "groq/llama-3.3-70b-versatile")
     
     # Data Dimensions
     VECTOR_DIMENSION: int = 3072
