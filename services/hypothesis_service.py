@@ -2,6 +2,7 @@
 Hypothesis service — coordinates graph execution, DB persistence, and caching.
 Routes call this service; the service never deals with HTTP concerns.
 """
+import uuid
 import logging
 from typing import Iterator, Optional
 
@@ -27,6 +28,8 @@ def stream_evaluation(hypothesis: str, domain: str, user_id: str) -> Iterator[di
     Run the hypothesis evaluation pipeline and yield progress / result dicts.
     Each yielded dict has a 'type' key: 'progress', 'result', or 'error'.
     """
+    active_conversation_id = str(uuid.uuid4())
+
     # 1. Embedding + vector cache check
     try:
         query_vector = get_embedding(hypothesis)
@@ -72,7 +75,7 @@ def stream_evaluation(hypothesis: str, domain: str, user_id: str) -> Iterator[di
 
     # 3. Persist to DB
     result = {
-        "conversation_id": None,
+        "conversation_id":              active_conversation_id,
         "raw_hypothesis":               final_state["raw_hypothesis"],
         "academic_domain":              final_state["academic_domain"],
         "core_claim":                   final_state["core_claim"],
@@ -99,8 +102,9 @@ def stream_evaluation(hypothesis: str, domain: str, user_id: str) -> Iterator[di
 
     try:
         with db_manager.get_connection() as conn:
-            _, conversation_id = hypothesis_repo.upsert_evaluation(conn, user_id, result, query_vector)
-            result["conversation_id"] = conversation_id
+            _, db_conv_id = hypothesis_repo.upsert_evaluation(conn, user_id, result, query_vector)
+            if db_conv_id:
+                result["conversation_id"] = db_conv_id
             conn.commit()
     except Exception as e:
         logger.error(f"Failed to store evaluation in PostgreSQL: {e}")
@@ -141,6 +145,7 @@ def stream_conversation(conversation_id: str, new_message: str, user_id: str) ->
     """
     active_context = ""
     academic_domain = "Biology"
+    row = None
 
     try:
         with db_manager.get_connection() as conn:
@@ -208,23 +213,13 @@ def stream_conversation(conversation_id: str, new_message: str, user_id: str) ->
         except Exception as e:
             logger.error(f"Chat literature search failed: {e}")
 
-    # Routing: complex queries → primary model, simple → chat model
-    query_lower = new_message.lower()
-    complex_triggers = {
-        "calculate", "formula", "math", "equation", "proof", "code", "python",
-        "molecular", "biochemical", "synthesis", "deep", "detailed explanation",
-        "genetics", "kinetics", "control group", "methodology",
-    }
-    model_to_use = (
-        config.PRIMARY_MODEL
-        if any(t in query_lower for t in complex_triggers) or len(new_message) > 180
-        else config.CHAT_MODEL
-    )
+    # Primary model: Groq Llama 3.3 70B (with fallback to Cohere & Gemini)
+    model_to_use = config.CHAT_MODEL
     logger.info(f"Chat routed to model: {model_to_use}")
 
     custom_inst = get_domain_specific_instructions(academic_domain)
     system_prompt = (
-        "You are an expert scientific researcher answering questions about a hypothesis evaluation.\n"
+        "You are an expert scientific research assistant answering questions about a hypothesis evaluation.\n"
         f"Domain-Specific Guidelines: {custom_inst}\n"
         "Rules:\n"
         "1. Provide a detailed scientific answer (max 3 paragraphs or 4-5 bullet points).\n"
@@ -238,7 +233,7 @@ def stream_conversation(conversation_id: str, new_message: str, user_id: str) ->
     )
 
     messages = [{"role": "system", "content": system_prompt}]
-    history = row["conversation_history"] if 'row' in locals() and row else []
+    history = row["conversation_history"] if row else []
     for msg in history:
         messages.append({"role": msg["role"], "content": msg["content"]})
     messages.append({"role": "user", "content": new_message})
@@ -252,11 +247,20 @@ def stream_conversation(conversation_id: str, new_message: str, user_id: str) ->
                 assistant_reply += content
                 yield content
     except Exception as e:
-        logger.error(f"Streaming completion failed: {e}")
-        yield f"[Error: {e}]"
-        return
+        logger.error(f"Chat completion with '{model_to_use}' failed: {e}. Falling back to Cohere/Gemini.")
+        try:
+            fallback_response = litellm.completion(model="cohere/command-r-plus-08-2024", messages=messages, stream=True)
+            for chunk in fallback_response:
+                content = chunk.choices[0].delta.content
+                if content:
+                    assistant_reply += content
+                    yield content
+        except Exception as fb_err:
+            logger.error(f"Fallback completion failed: {fb_err}")
+            yield f"[Error: {fb_err}]"
+            return
 
-    # Persist updated chat history
+    # Persist updated chat history if DB is available
     if assistant_reply:
         updated_history = list(history) + [
             {"role": "user", "content": new_message},

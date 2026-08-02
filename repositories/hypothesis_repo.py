@@ -63,13 +63,14 @@ def find_related_precedents(conn, user_id: str, query_vector: list, exclude_conv
 
 
 def upsert_evaluation(conn, user_id: str, data: dict, embedding: list) -> tuple[int, str]:
+    conv_id = data.get("conversation_id")
     with conn.cursor() as cur:
-        cur.execute("""INSERT INTO hypothesis_evaluations (user_id, hypothesis, domain, core_claim, underlying_assumptions, causal_chain,
+        cur.execute("""INSERT INTO hypothesis_evaluations (user_id, conversation_id, hypothesis, domain, core_claim, underlying_assumptions, causal_chain,
             supporting_evidence, counter_evidence, vulnerability_score, empirical_evidence_score, logical_consistency_score,
             confounder_vulnerability_score, methodological_feasibility_score, evaluation_summary, critical_weaknesses,
             proposed_validation_protocol, expected_effect_size, statistical_power_estimation, scientific_consensus_index,
             bias_vulnerability_score, conversation_history, embedding)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (user_id, hypothesis) DO UPDATE SET domain = EXCLUDED.domain, core_claim = EXCLUDED.core_claim,
             underlying_assumptions = EXCLUDED.underlying_assumptions, causal_chain = EXCLUDED.causal_chain,
             supporting_evidence = EXCLUDED.supporting_evidence, counter_evidence = EXCLUDED.counter_evidence,
@@ -79,8 +80,8 @@ def upsert_evaluation(conn, user_id: str, data: dict, embedding: list) -> tuple[
             critical_weaknesses = EXCLUDED.critical_weaknesses, proposed_validation_protocol = EXCLUDED.proposed_validation_protocol,
             expected_effect_size = EXCLUDED.expected_effect_size, statistical_power_estimation = EXCLUDED.statistical_power_estimation,
             scientific_consensus_index = EXCLUDED.scientific_consensus_index, bias_vulnerability_score = EXCLUDED.bias_vulnerability_score,
-            conversation_history = '[]'::jsonb, embedding = EXCLUDED.embedding, created_at = NOW()
-            RETURNING id, conversation_id""", (user_id, data["raw_hypothesis"], data["academic_domain"], data["core_claim"], data["underlying_assumptions"], data["causal_chain"], data["supporting_evidence"], data["counter_evidence"], data["vulnerability_score"], data["empirical_evidence_score"], data["logical_consistency_score"], data["confounder_vulnerability_score"], data["methodological_feasibility_score"], data["evaluation_summary"], data["critical_weaknesses"], data["proposed_validation_protocol"], data["expected_effect_size"], data["statistical_power_estimation"], data["scientific_consensus_index"], data["bias_vulnerability_score"], json.dumps([]), embedding))
+            embedding = EXCLUDED.embedding, created_at = NOW()
+            RETURNING id, conversation_id""", (user_id, conv_id, data["raw_hypothesis"], data["academic_domain"], data["core_claim"], data["underlying_assumptions"], data["causal_chain"], data["supporting_evidence"], data["counter_evidence"], data["vulnerability_score"], data["empirical_evidence_score"], data["logical_consistency_score"], data["confounder_vulnerability_score"], data["methodological_feasibility_score"], data["evaluation_summary"], data["critical_weaknesses"], data["proposed_validation_protocol"], data["expected_effect_size"], data["statistical_power_estimation"], data["scientific_consensus_index"], data["bias_vulnerability_score"], json.dumps([]), embedding))
         row = cur.fetchone()
         return row[0], str(row[1])
 
