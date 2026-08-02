@@ -10,11 +10,11 @@ class Config:
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
     SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
     
-    # Model selections (Cohere Command-R Plus is optimized for literature grounding & RAG)
-    PRIMARY_MODEL: str = os.getenv("PRIMARY_MODEL", "cohere/command-r-plus-08-2024")
-    JUDGE_MODEL: str = os.getenv("JUDGE_MODEL", "cohere/command-r-plus-08-2024")
+    # Model selections (Gemini 2.5 Flash is ultra-fast, robust, and handles structured output natively)
+    PRIMARY_MODEL: str = os.getenv("PRIMARY_MODEL", "gemini/gemini-2.5-flash")
+    JUDGE_MODEL: str = os.getenv("JUDGE_MODEL", "gemini/gemini-2.5-flash")
     EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "gemini/gemini-embedding-001")
-    CHAT_MODEL: str = os.getenv("CHAT_MODEL", "cohere/command-r-plus-08-2024")
+    CHAT_MODEL: str = os.getenv("CHAT_MODEL", "gemini/gemini-2.5-flash")
     
     # Data Dimensions
     VECTOR_DIMENSION: int = 3072

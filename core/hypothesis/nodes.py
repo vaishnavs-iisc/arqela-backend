@@ -4,19 +4,20 @@ Pure functions — no HTTP, no DB imports.
 """
 import json
 import logging
+import litellm
 
 from config import config
 from core.hypothesis.state import HypothesisState
 from core.hypothesis.search import academic_search, retry_on_exception
 
+litellm.drop_params = True
+
 logger = logging.getLogger("HypothesisNodes")
 
 
-@retry_on_exception(retries=3, backoff=2.0)
+@retry_on_exception(retries=2, backoff=1.0)
 def safe_llm_completion(*args, **kwargs):
-    """litellm.completion with automatic retry."""
-    import litellm
-    litellm.drop_params = True
+    """litellm.completion with automatic retry and parameter safety."""
     return litellm.completion(*args, **kwargs)
 
 
@@ -89,9 +90,13 @@ def analyze_hypothesis_node(state: HypothesisState) -> dict:
         response = safe_llm_completion(
             model=config.PRIMARY_MODEL,
             messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
         )
-        result = json.loads(response.choices[0].message.content.strip())
+        content = response.choices[0].message.content.strip()
+        if content.startswith("```json"):
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif content.startswith("```"):
+            content = content.split("```")[1].split("```")[0].strip()
+        result = json.loads(content)
         logs.append("[Theory Breakdown] Parsed core claims, assumptions, and causal links.")
         return {
             "core_claim": result.get("core_claim", hypothesis),
@@ -124,7 +129,7 @@ def advocate_node(state: HypothesisState) -> dict:
     search_payloads = []
     for kw in keywords:
         try:
-            res = academic_search(kw, domain=domain, max_results=5)
+            res = academic_search(kw, domain=domain, max_results=3)
             search_payloads.append(f"--- Search Query: '{kw}' ---\n{res}")
         except Exception as e:
             logger.warning(f"Search failed for keyword '{kw}': {e}")
@@ -171,7 +176,7 @@ def adversary_node(state: HypothesisState) -> dict:
     search_payloads = []
     for kw in keywords:
         try:
-            res = academic_search(kw, domain=domain, max_results=5)
+            res = academic_search(kw, domain=domain, max_results=3)
             search_payloads.append(f"--- Search Query: '{kw}' ---\n{res}")
         except Exception as e:
             logger.warning(f"Search failed for keyword '{kw}': {e}")
@@ -252,9 +257,13 @@ def arbiter_node(state: HypothesisState) -> dict:
         response = safe_llm_completion(
             model=config.PRIMARY_MODEL,
             messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
         )
-        result = json.loads(response.choices[0].message.content.strip())
+        content = response.choices[0].message.content.strip()
+        if content.startswith("```json"):
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif content.startswith("```"):
+            content = content.split("```")[1].split("```")[0].strip()
+        result = json.loads(content)
         logs.append("[Scientific Arbiter] Finalised peer evaluation and validation protocol.")
         return {
             "vulnerability_score": result.get("vulnerability_score", defaults["vulnerability_score"]),
