@@ -8,6 +8,7 @@ Fallback model: Gemini 2.5 Flash.
 import json
 import logging
 import litellm
+from concurrent.futures import ThreadPoolExecutor
 
 from config import config
 from core.hypothesis.state import HypothesisState
@@ -19,14 +20,14 @@ logger = logging.getLogger("HypothesisNodes")
 
 
 def safe_llm_completion(model: str, messages: list, fallback_models: list = None, **kwargs):
-    """Call Cohere/Groq with max_tokens optimization and multi-tier fallback."""
+    """Call Cohere/Groq with generous 35s timeout and max_tokens optimization."""
     if fallback_models is None:
         fallback_models = ["groq/llama-3.3-70b-versatile", "gemini/gemini-2.5-flash"]
 
     kwargs.setdefault("max_tokens", 350)
 
     try:
-        return litellm.completion(model=model, messages=messages, timeout=12, **kwargs)
+        return litellm.completion(model=model, messages=messages, timeout=35, **kwargs)
     except Exception as e:
         logger.warning(f"Primary model '{model}' failed: {e}. Trying fallback models {fallback_models}.")
 
@@ -34,11 +35,11 @@ def safe_llm_completion(model: str, messages: list, fallback_models: list = None
         if fallback == model:
             continue
         try:
-            return litellm.completion(model=fallback, messages=messages, timeout=12, **kwargs)
+            return litellm.completion(model=fallback, messages=messages, timeout=35, **kwargs)
         except Exception as fb_err:
             logger.warning(f"Fallback model '{fallback}' failed: {fb_err}.")
 
-    return litellm.completion(model="gemini/gemini-2.5-flash", messages=messages, timeout=12, **kwargs)
+    return litellm.completion(model="gemini/gemini-2.5-flash", messages=messages, timeout=35, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -139,7 +140,7 @@ def analyze_hypothesis_node(state: HypothesisState) -> dict:
 
 
 def advocate_node(state: HypothesisState) -> dict:
-    """Gather supporting literature and synthesise with Cohere Command-R Plus for grounded citations."""
+    """Gather supporting literature concurrently and synthesise with Cohere Command-R Plus."""
     logger.info("Entering advocate_node (Cohere Command-R Plus)")
     core_claim = state["core_claim"]
     keywords = state["advocate_keywords"]
@@ -147,13 +148,16 @@ def advocate_node(state: HypothesisState) -> dict:
     logs = ["[Node: Supporting Evidence Gatherer] Searching literature & compiling citation brief via Cohere."]
 
     search_payloads = []
-    for kw in keywords:
-        try:
-            res = academic_search(kw, domain=domain, max_results=3)
-            search_payloads.append(f"--- Search Query: '{kw}' ---\n{res}")
-        except Exception as e:
-            logger.warning(f"Search failed for keyword '{kw}': {e}")
-            search_payloads.append(f"--- Search Query: '{kw}' ---\nSearch failed: {e}")
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = {executor.submit(academic_search, kw, domain, 3): kw for kw in keywords[:2]}
+        for future in futures:
+            kw = futures[future]
+            try:
+                res = future.result(timeout=4)
+                search_payloads.append(f"--- Search Query: '{kw}' ---\n{res}")
+            except Exception as e:
+                logger.warning(f"Search failed for keyword '{kw}': {e}")
+                search_payloads.append(f"--- Search Query: '{kw}' ---\nSearch failed: {e}")
 
     all_search_data = "\n\n".join(search_payloads)
     custom_inst = get_domain_specific_instructions(domain)
@@ -186,7 +190,7 @@ def advocate_node(state: HypothesisState) -> dict:
 
 
 def adversary_node(state: HypothesisState) -> dict:
-    """Gather counter-arguments and synthesise with Cohere Command-R Plus."""
+    """Gather counter-arguments concurrently and synthesise with Cohere Command-R Plus."""
     logger.info("Entering adversary_node (Cohere Command-R Plus)")
     core_claim = state["core_claim"]
     keywords = state["adversary_keywords"]
@@ -194,13 +198,16 @@ def adversary_node(state: HypothesisState) -> dict:
     logs = ["[Node: Skeptic Auditor] Auditing counter-arguments via Cohere Command-R Plus."]
 
     search_payloads = []
-    for kw in keywords:
-        try:
-            res = academic_search(kw, domain=domain, max_results=3)
-            search_payloads.append(f"--- Search Query: '{kw}' ---\n{res}")
-        except Exception as e:
-            logger.warning(f"Search failed for keyword '{kw}': {e}")
-            search_payloads.append(f"--- Search Query: '{kw}' ---\nSearch failed: {e}")
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = {executor.submit(academic_search, kw, domain, 3): kw for kw in keywords[:2]}
+        for future in futures:
+            kw = futures[future]
+            try:
+                res = future.result(timeout=4)
+                search_payloads.append(f"--- Search Query: '{kw}' ---\n{res}")
+            except Exception as e:
+                logger.warning(f"Search failed for keyword '{kw}': {e}")
+                search_payloads.append(f"--- Search Query: '{kw}' ---\nSearch failed: {e}")
 
     all_search_data = "\n\n".join(search_payloads)
     custom_inst = get_domain_specific_instructions(domain)

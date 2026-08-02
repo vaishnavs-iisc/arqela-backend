@@ -5,7 +5,6 @@ Priority order per query:
   1. PubMed (biomedical domains)
   2. Crossref (all academic fields)
   3. DuckDuckGo HTML scraping (fallback)
-  4. Synthetic placeholders (last resort — clearly marked)
 """
 import json
 import logging
@@ -16,36 +15,11 @@ from functools import wraps
 from typing import Optional
 
 from bs4 import BeautifulSoup
-from duckduckgo_search import DDGS
 
 logger = logging.getLogger("HypothesisSearch")
 
-# ---------------------------------------------------------------------------
-# Domain → preferred academic sites mapping
-# ---------------------------------------------------------------------------
-DOMAIN_ACADEMIC_SITES: dict[str, str] = {
-    "biology": "site:pubmed.ncbi.nlm.nih.gov OR site:biorxiv.org OR site:nature.com OR site:scholar.google.com",
-    "medicine": "site:pubmed.ncbi.nlm.nih.gov OR site:clinicaltrials.gov OR site:thelancet.com OR site:nejm.org OR site:scholar.google.com",
-    "neuroscience": "site:pubmed.ncbi.nlm.nih.gov OR site:biorxiv.org OR site:nature.com OR site:scholar.google.com",
-    "physics": "site:arxiv.org OR site:aps.org OR site:nature.com OR site:scholar.google.com",
-    "astrophysics": "site:arxiv.org OR site:adsabs.harvard.edu OR site:nature.com OR site:scholar.google.com",
-    "chemistry": "site:pubs.acs.org OR site:rsc.org OR site:nature.com OR site:scholar.google.com",
-    "materials science": "site:pubs.acs.org OR site:nature.com OR site:scholar.google.com OR site:sciencedirect.com",
-    "environmental science": "site:sciencedirect.com OR site:nature.com OR site:scholar.google.com OR site:springer.com",
-    "economics": "site:nber.org OR site:jstor.org OR site:repec.org OR site:scholar.google.com",
-    "software engineering": "site:ieeexplore.ieee.org OR site:dl.acm.org OR site:github.com OR site:scholar.google.com",
-    "psychology": "site:pubmed.ncbi.nlm.nih.gov OR site:apa.org OR site:jstor.org OR site:scholar.google.com",
-    "sociology": "site:jstor.org OR site:sagepub.com OR site:scholar.google.com OR site:springer.com",
-    "management": "site:jstor.org OR site:ssrn.com OR site:scholar.google.com OR site:springer.com",
-    "organizational behavior": "site:apa.org OR site:jstor.org OR site:scholar.google.com OR site:sciencedirect.com",
-    "strategy & innovation": "site:jstor.org OR site:ssrn.com OR site:scholar.google.com OR site:sciencedirect.com",
-}
 
-# ---------------------------------------------------------------------------
-# Retry decorator
-# ---------------------------------------------------------------------------
-
-def retry_on_exception(retries: int = 3, backoff: float = 2.0):
+def retry_on_exception(retries: int = 2, backoff: float = 1.0):
     """Retry a function with exponential backoff on any exception."""
     def decorator(func):
         @wraps(func)
@@ -56,25 +30,16 @@ def retry_on_exception(retries: int = 3, backoff: float = 2.0):
                     return func(*args, **kwargs)
                 except Exception as e:
                     if attempt == retries - 1:
-                        logger.error(f"'{func.__name__}' failed permanently after {retries} attempts: {e}")
+                        logger.error(f"'{func.__name__}' failed after {retries} attempts: {e}")
                         raise
-                    logger.warning(
-                        f"'{func.__name__}' attempt {attempt + 1}/{retries} failed — "
-                        f"retrying in {current_delay}s. Error: {e}"
-                    )
                     time.sleep(current_delay)
-                    current_delay *= 2
+                    current_delay *= 1.5
         return wrapper
     return decorator
 
 
-# ---------------------------------------------------------------------------
-# Individual search backends
-# ---------------------------------------------------------------------------
-
-@retry_on_exception(retries=3, backoff=2.0)
 def ddg_html_search(query: str, max_results: int = 3) -> list:
-    """DuckDuckGo HTML interface scraper (fallback when APIs return nothing)."""
+    """DuckDuckGo HTML interface scraper with 3-second timeout."""
     logger.info(f"DDG HTML search: '{query}'")
     url = "https://html.duckduckgo.com/html/?q=" + urllib.parse.quote(query)
     headers = {
@@ -85,7 +50,7 @@ def ddg_html_search(query: str, max_results: int = 3) -> list:
     }
     req = urllib.request.Request(url, headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=10) as response:
+        with urllib.request.urlopen(req, timeout=3) as response:
             soup = BeautifulSoup(response.read(), "html.parser")
             snippets = soup.find_all("a", class_="result__snippet")
             results, seen = [], set()
@@ -125,7 +90,7 @@ def query_pubmed(query: str, max_results: int = 3) -> list:
     )
     req = urllib.request.Request(search_url, headers={"User-Agent": "Mozilla/5.0"})
     try:
-        with urllib.request.urlopen(req, timeout=8) as resp:
+        with urllib.request.urlopen(req, timeout=3) as resp:
             data = json.loads(resp.read().decode())
             id_list = data.get("esearchresult", {}).get("idlist", [])
             if not id_list:
@@ -136,7 +101,7 @@ def query_pubmed(query: str, max_results: int = 3) -> list:
                 f"?db=pubmed&id={ids_str}&retmode=json"
             )
             with urllib.request.urlopen(
-                urllib.request.Request(summary_url, headers={"User-Agent": "Mozilla/5.0"}), timeout=8
+                urllib.request.Request(summary_url, headers={"User-Agent": "Mozilla/5.0"}), timeout=3
             ) as sum_resp:
                 sum_data = json.loads(sum_resp.read().decode())
                 results = []
@@ -162,7 +127,7 @@ def query_crossref(query: str, max_results: int = 3) -> list:
         headers={"User-Agent": "mailto:research@example.com (Scientific Platform Evaluation)"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=8) as resp:
+        with urllib.request.urlopen(req, timeout=3) as resp:
             data = json.loads(resp.read().decode())
             items = data.get("message", {}).get("items", [])
             results = []
@@ -184,19 +149,8 @@ def query_crossref(query: str, max_results: int = 3) -> list:
         return []
 
 
-# ---------------------------------------------------------------------------
-# Composite academic search
-# ---------------------------------------------------------------------------
-
-@retry_on_exception(retries=3, backoff=2.0)
 def academic_search(query: str, domain: Optional[str] = None, max_results: int = 3) -> str:
-    """
-    Prioritised academic search:
-      1. PubMed (biomedical domains)
-      2. Crossref (all fields)
-      3. DDG HTML scraping
-    Returns a formatted string ready to inject into an LLM prompt.
-    """
+    """Fast academic search using PubMed, Crossref, and DDG."""
     logger.info(f"Academic search: '{query}' (domain='{domain}')")
     results_list: list = []
     seen_links: set = set()
@@ -217,7 +171,6 @@ def academic_search(query: str, domain: Optional[str] = None, max_results: int =
                 results_list.append(r)
 
     if len(results_list) < max_results:
-        logger.info("APIs returned insufficient results — falling back to DDG HTML scraping.")
         for r in ddg_html_search(query, max_results=max_results):
             if r["href"] not in seen_links:
                 seen_links.add(r["href"])
@@ -230,7 +183,6 @@ def academic_search(query: str, domain: Optional[str] = None, max_results: int =
     return "\n---\n".join(formatted) if formatted else f"No search results found for query: '{query}'."
 
 
-@retry_on_exception(retries=3, backoff=2.0)
 def web_search(query: str, max_results: int = 3) -> str:
     """General web search via DuckDuckGo with Crossref fallback."""
     logger.info(f"Web search: '{query}'")
