@@ -6,9 +6,6 @@ Responsibilities:
   - Register middleware (CORS)
   - Manage database pool lifecycle (lifespan)
   - Register all API routers
-
-Nothing else. No business logic, no graph construction, no SQL.
-Run with: uvicorn main:app --reload
 """
 import logging
 from contextlib import asynccontextmanager
@@ -27,11 +24,17 @@ logger = logging.getLogger("Main")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting up — initialising PostgreSQL connection pool...")
-    db_manager.init_pool()
-    db_manager.init_db()
+    try:
+        db_manager.init_pool()
+        db_manager.init_db()
+    except Exception as e:
+        logger.error(f"Postgres pool startup notice: {e}")
     yield
     logger.info("Shutting down — closing PostgreSQL connection pool...")
-    db_manager.close_pool()
+    try:
+        db_manager.close_pool()
+    except Exception as e:
+        logger.error(f"Postgres pool shutdown notice: {e}")
 
 
 app = FastAPI(

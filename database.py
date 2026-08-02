@@ -16,7 +16,7 @@ class DatabaseManager:
             try:
                 self.pool = ConnectionPool(
                     conninfo=config.DB_DSN,
-                    min_size=2,
+                    min_size=0,
                     max_size=10,
                     open=True,
                     kwargs={"connect_timeout": 5}
@@ -24,13 +24,15 @@ class DatabaseManager:
                 logger.info("PostgreSQL connection pool initialized successfully.")
             except Exception as e:
                 logger.error(f"Failed to create database connection pool: {e}")
-                raise e
 
     def close_pool(self):
         """Close the connection pool during app shutdown"""
         if self.pool:
             logger.info("Closing PostgreSQL connection pool...")
-            self.pool.close()
+            try:
+                self.pool.close()
+            except Exception as e:
+                logger.error(f"Error closing connection pool: {e}")
             self.pool = None
             logger.info("PostgreSQL connection pool closed.")
 
@@ -39,6 +41,8 @@ class DatabaseManager:
         """Retrieve a connection from the pool inside a thread-safe context"""
         if self.pool is None:
             self.init_pool()
+        if self.pool is None:
+            raise RuntimeError("Database connection pool could not be established. Please check DB_DSN environment variable.")
         with self.pool.connection() as conn:
             yield conn
 
@@ -92,8 +96,6 @@ class DatabaseManager:
                         ADD COLUMN IF NOT EXISTS scientific_consensus_index FLOAT,
                         ADD COLUMN IF NOT EXISTS bias_vulnerability_score INT;
                     """)
-                    # Supabase Auth owns user records; these columns only store its UUID.
-                    # The migration preserves any existing local development data.
                     cur.execute("""
                         ALTER TABLE hypothesis_evaluations
                         ADD COLUMN IF NOT EXISTS user_id UUID,
@@ -111,16 +113,10 @@ class DatabaseManager:
                         CREATE INDEX IF NOT EXISTS hypothesis_evaluations_user_created_idx
                         ON hypothesis_evaluations (user_id, created_at DESC);
                     """)
-                    
-                    # Note: We omit index creation (HNSW) here because pgvector has a limit
-                    # of 2000 dimensions for HNSW indexes, while our embeddings are 3072.
-                    # Sequential scans are extremely fast for datasets under 100k rows.
-                    pass
                 conn.commit()
             logger.info("PostgreSQL database tables and vector indexes initialized successfully.")
         except Exception as e:
             logger.error(f"Postgres schema migration failed: {e}")
-            raise e
 
 # Singleton connection pool instance
 db_manager = DatabaseManager()
