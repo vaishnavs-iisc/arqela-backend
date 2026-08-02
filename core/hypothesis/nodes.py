@@ -2,8 +2,8 @@
 LangGraph node functions for the Hypothesis Tester workflow.
 Pure functions — no HTTP, no DB imports.
 Primary model: Cohere Command-R Plus (for scientific citations & research).
-Secondary model: Groq Llama-3.3 70B (for chat & tasks).
-Fallback model: Gemini 2.5 Flash.
+Secondary model: Cohere Command-R / Groq Llama-3.3 70B (for chat & tasks).
+Gemini is COMPLETELY EXCLUDED from responses.
 """
 import json
 import logging
@@ -20,26 +20,27 @@ logger = logging.getLogger("HypothesisNodes")
 
 
 def safe_llm_completion(model: str, messages: list, fallback_models: list = None, **kwargs):
-    """Call Cohere/Groq with generous 35s timeout and max_tokens optimization."""
+    """Call Cohere/Groq with generous 25s timeout and max_tokens optimization."""
     if fallback_models is None:
-        fallback_models = ["groq/llama-3.3-70b-versatile", "gemini/gemini-2.5-flash"]
+        fallback_models = ["cohere/command-r-08-2024", "groq/llama-3.3-70b-versatile"]
 
     kwargs.setdefault("max_tokens", 350)
 
     try:
-        return litellm.completion(model=model, messages=messages, timeout=35, **kwargs)
+        return litellm.completion(model=model, messages=messages, timeout=25, **kwargs)
     except Exception as e:
-        logger.warning(f"Primary model '{model}' failed: {e}. Trying fallback models {fallback_models}.")
+        logger.warning(f"Primary model '{model}' failed: {e}. Trying fallbacks {fallback_models}.")
 
     for fallback in fallback_models:
         if fallback == model:
             continue
         try:
-            return litellm.completion(model=fallback, messages=messages, timeout=35, **kwargs)
+            return litellm.completion(model=fallback, messages=messages, timeout=25, **kwargs)
         except Exception as fb_err:
             logger.warning(f"Fallback model '{fallback}' failed: {fb_err}.")
 
-    return litellm.completion(model="gemini/gemini-2.5-flash", messages=messages, timeout=35, **kwargs)
+    # Absolute fallback is Cohere Command-R
+    return litellm.completion(model="cohere/command-r-08-2024", messages=messages, timeout=25, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -153,7 +154,7 @@ def advocate_node(state: HypothesisState) -> dict:
         for future in futures:
             kw = futures[future]
             try:
-                res = future.result(timeout=4)
+                res = future.result(timeout=3)
                 search_payloads.append(f"--- Search Query: '{kw}' ---\n{res}")
             except Exception as e:
                 logger.warning(f"Search failed for keyword '{kw}': {e}")
@@ -203,7 +204,7 @@ def adversary_node(state: HypothesisState) -> dict:
         for future in futures:
             kw = futures[future]
             try:
-                res = future.result(timeout=4)
+                res = future.result(timeout=3)
                 search_payloads.append(f"--- Search Query: '{kw}' ---\n{res}")
             except Exception as e:
                 logger.warning(f"Search failed for keyword '{kw}': {e}")

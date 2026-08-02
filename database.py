@@ -19,7 +19,7 @@ class DatabaseManager:
                     min_size=0,
                     max_size=10,
                     open=True,
-                    kwargs={"connect_timeout": 5}
+                    kwargs={"connect_timeout": 3}
                 )
                 logger.info("PostgreSQL connection pool initialized successfully.")
             except Exception as e:
@@ -38,13 +38,17 @@ class DatabaseManager:
 
     @contextmanager
     def get_connection(self):
-        """Retrieve a connection from the pool inside a thread-safe context"""
+        """Retrieve a connection from the pool inside a thread-safe context with strict fail-fast timeout."""
         if self.pool is None:
             self.init_pool()
         if self.pool is None:
             raise RuntimeError("Database connection pool could not be established. Please check DB_DSN environment variable.")
-        with self.pool.connection() as conn:
-            yield conn
+        try:
+            with self.pool.connection(timeout=2.0) as conn:
+                yield conn
+        except Exception as e:
+            logger.warning(f"Database connection acquire failed or timed out: {e}")
+            raise e
 
     def init_db(self):
         """Verify schemas and establish performance indexes"""
@@ -54,7 +58,6 @@ class DatabaseManager:
                     cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
                     cur.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto;")
                     
-                    # Create past reports table
                     cur.execute(f"""
                         CREATE TABLE IF NOT EXISTS past_reports (
                             id SERIAL PRIMARY KEY,
@@ -64,7 +67,6 @@ class DatabaseManager:
                         );
                     """)
                     
-                    # Create hypothesis evaluations table
                     cur.execute(f"""
                         CREATE TABLE IF NOT EXISTS hypothesis_evaluations (
                             id SERIAL PRIMARY KEY,
@@ -83,7 +85,6 @@ class DatabaseManager:
                         );
                     """)
                     
-                    # Alter table to add the new multi-dimensional scores (safety migrations)
                     cur.execute("""
                         ALTER TABLE hypothesis_evaluations 
                         ADD COLUMN IF NOT EXISTS empirical_evidence_score INT,
