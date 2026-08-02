@@ -1,6 +1,7 @@
 """
 LangGraph node functions for the Hypothesis Tester workflow.
-Pure functions — no HTTP, no DB imports. Multi-LLM setup using Gemini & Cohere.
+Pure functions — no HTTP, no DB imports. 
+3-LLM Tri-Engine Setup using Gemini 2.5 Flash, Cohere Command-R Plus, and Groq Llama-3.3 70B.
 """
 import json
 import logging
@@ -15,13 +16,17 @@ litellm.drop_params = True
 logger = logging.getLogger("HypothesisNodes")
 
 
-def safe_llm_completion(model: str, messages: list, fallback_model: str = "gemini/gemini-2.5-flash", **kwargs):
+def safe_llm_completion(model: str, messages: list, fallback_model: str = "cohere/command-r-plus-08-2024", **kwargs):
     """Call specialized LLM model with automatic fallback if primary model errors or times out."""
     try:
-        return litellm.completion(model=model, messages=messages, timeout=15, **kwargs)
+        return litellm.completion(model=model, messages=messages, timeout=12, **kwargs)
     except Exception as e:
         logger.warning(f"Primary model '{model}' failed: {e}. Falling back to '{fallback_model}'.")
-        return litellm.completion(model=fallback_model, messages=messages, timeout=15, **kwargs)
+        try:
+            return litellm.completion(model=fallback_model, messages=messages, timeout=12, **kwargs)
+        except Exception as err:
+            logger.warning(f"Secondary model '{fallback_model}' failed: {err}. Falling back to Gemini.")
+            return litellm.completion(model="gemini/gemini-2.5-flash", messages=messages, timeout=12, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -70,10 +75,10 @@ def get_domain_specific_instructions(domain: str) -> str:
 
 def analyze_hypothesis_node(state: HypothesisState) -> dict:
     """Deconstruct the hypothesis using Gemini 2.5 Flash for structured JSON breakdown."""
-    logger.info("Entering analyze_hypothesis_node (Gemini)")
+    logger.info("Entering analyze_hypothesis_node (Gemini 2.5 Flash)")
     hypothesis = state["raw_hypothesis"]
     domain = state["academic_domain"]
-    logs = ["[Node: Theory Breakdown] Deconstructing the core scientific claims."]
+    logs = ["[Node: Theory Breakdown] Deconstructing core scientific claims via Gemini 2.5 Flash."]
 
     custom_inst = get_domain_specific_instructions(domain)
     prompt = (
@@ -127,7 +132,7 @@ def advocate_node(state: HypothesisState) -> dict:
     core_claim = state["core_claim"]
     keywords = state["advocate_keywords"]
     domain = state["academic_domain"]
-    logs = ["[Node: Supporting Evidence Gatherer] Searching for validating literature."]
+    logs = ["[Node: Supporting Evidence Gatherer] Searching literature & compiling brief via Cohere."]
 
     search_payloads = []
     for kw in keywords:
@@ -157,7 +162,7 @@ def advocate_node(state: HypothesisState) -> dict:
             messages=[{"role": "user", "content": prompt}],
         )
         synthesis = response.choices[0].message.content.strip()
-        logs.append("[Supporting Evidence Gatherer] Compiled supporting scientific briefs via Cohere.")
+        logs.append("[Supporting Evidence Gatherer] Compiled supporting scientific brief.")
         return {"advocate_sources": all_search_data, "supporting_evidence": synthesis, "agent_logs": logs}
     except Exception as e:
         logger.error(f"Advocate node failed: {e}")
@@ -169,12 +174,12 @@ def advocate_node(state: HypothesisState) -> dict:
 
 
 def adversary_node(state: HypothesisState) -> dict:
-    """Gather counter-arguments and synthesise with Cohere Command-R Plus."""
-    logger.info("Entering adversary_node (Cohere Command-R Plus)")
+    """Gather counter-arguments and synthesise with Groq Llama-3.3 70B."""
+    logger.info("Entering adversary_node (Groq Llama-3.3 70B)")
     core_claim = state["core_claim"]
     keywords = state["adversary_keywords"]
     domain = state["academic_domain"]
-    logs = ["[Node: Skeptic Auditor] Searching for counter-claims and alternative explanations."]
+    logs = ["[Node: Skeptic Auditor] Auditing counter-arguments via Groq Llama 3.3 70B."]
 
     search_payloads = []
     for kw in keywords:
@@ -204,7 +209,7 @@ def adversary_node(state: HypothesisState) -> dict:
             messages=[{"role": "user", "content": prompt}],
         )
         synthesis = response.choices[0].message.content.strip()
-        logs.append("[Skeptic Auditor] Compiled counter-arguments via Cohere.")
+        logs.append("[Skeptic Auditor] Compiled counter-arguments via Groq Llama 3.3 70B.")
         return {"adversary_sources": all_search_data, "counter_evidence": synthesis, "agent_logs": logs}
     except Exception as e:
         logger.error(f"Adversary node failed: {e}")
@@ -217,12 +222,12 @@ def adversary_node(state: HypothesisState) -> dict:
 
 def arbiter_node(state: HypothesisState) -> dict:
     """Synthesise both sides and produce quantified evaluation via Gemini 2.5 Flash."""
-    logger.info("Entering arbiter_node (Gemini)")
+    logger.info("Entering arbiter_node (Gemini 2.5 Flash)")
     core_claim = state["core_claim"]
     adv_brief = state["supporting_evidence"]
     opp_brief = state["counter_evidence"]
     domain = state.get("academic_domain", "Biology")
-    logs = ["[Node: Scientific Arbiter] Synthesising evidence and drafting validation protocol."]
+    logs = ["[Node: Scientific Arbiter] Synthesising evidence and drafting validation protocol via Gemini."]
 
     custom_inst = get_domain_specific_instructions(domain)
     prompt = (
@@ -267,7 +272,7 @@ def arbiter_node(state: HypothesisState) -> dict:
         elif content.startswith("```"):
             content = content.split("```")[1].split("```")[0].strip()
         result = json.loads(content)
-        logs.append("[Scientific Arbiter] Finalised peer evaluation and validation protocol via Gemini.")
+        logs.append("[Scientific Arbiter] Finalised peer evaluation via Gemini 2.5 Flash.")
         return {
             "vulnerability_score": result.get("vulnerability_score", defaults["vulnerability_score"]),
             "empirical_evidence_score": result.get("empirical_evidence_score", defaults["empirical_evidence_score"]),

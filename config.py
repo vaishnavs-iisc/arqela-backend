@@ -10,10 +10,13 @@ class Config:
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
     SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
     
-    # Multi-LLM Role Assignments across Agent Nodes
+    # 3-LLM Tri-Engine Architecture:
+    # 1. Theory Breakdown & Arbiter -> Gemini 2.5 Flash
+    # 2. Advocate Node -> Cohere Command-R Plus
+    # 3. Adversary Node -> Groq Llama 3.3 70B (with Cohere/Gemini fallback)
     THEORY_MODEL: str = os.getenv("THEORY_MODEL", "gemini/gemini-2.5-flash")
     ADVOCATE_MODEL: str = os.getenv("ADVOCATE_MODEL", "cohere/command-r-plus-08-2024")
-    ADVERSARY_MODEL: str = os.getenv("ADVERSARY_MODEL", "cohere/command-r-plus-08-2024")
+    ADVERSARY_MODEL: str = os.getenv("ADVERSARY_MODEL", "groq/llama-3.3-70b-versatile")
     ARBITER_MODEL: str = os.getenv("ARBITER_MODEL", "gemini/gemini-2.5-flash")
     
     PRIMARY_MODEL: str = os.getenv("PRIMARY_MODEL", "gemini/gemini-2.5-flash")
