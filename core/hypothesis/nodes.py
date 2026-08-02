@@ -19,12 +19,14 @@ logger = logging.getLogger("HypothesisNodes")
 
 
 def safe_llm_completion(model: str, messages: list, fallback_models: list = None, **kwargs):
-    """Call Cohere/Groq with multi-tier fallback to Groq/Gemini if needed."""
+    """Call Cohere/Groq with max_tokens optimization and multi-tier fallback."""
     if fallback_models is None:
         fallback_models = ["groq/llama-3.3-70b-versatile", "gemini/gemini-2.5-flash"]
 
+    kwargs.setdefault("max_tokens", 350)
+
     try:
-        return litellm.completion(model=model, messages=messages, timeout=15, **kwargs)
+        return litellm.completion(model=model, messages=messages, timeout=12, **kwargs)
     except Exception as e:
         logger.warning(f"Primary model '{model}' failed: {e}. Trying fallback models {fallback_models}.")
 
@@ -32,11 +34,11 @@ def safe_llm_completion(model: str, messages: list, fallback_models: list = None
         if fallback == model:
             continue
         try:
-            return litellm.completion(model=fallback, messages=messages, timeout=15, **kwargs)
+            return litellm.completion(model=fallback, messages=messages, timeout=12, **kwargs)
         except Exception as fb_err:
             logger.warning(f"Fallback model '{fallback}' failed: {fb_err}.")
 
-    return litellm.completion(model="gemini/gemini-2.5-flash", messages=messages, timeout=15, **kwargs)
+    return litellm.completion(model="gemini/gemini-2.5-flash", messages=messages, timeout=12, **kwargs)
 
 
 # ---------------------------------------------------------------------------
