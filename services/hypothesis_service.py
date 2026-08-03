@@ -23,12 +23,12 @@ logger = logging.getLogger("HypothesisService")
 # Evaluation (streaming)
 # ---------------------------------------------------------------------------
 
-def stream_evaluation(hypothesis: str, domain: str, user_id: str) -> Iterator[dict]:
+def stream_evaluation(hypothesis: str, domain: str, user_id: str, conversation_id: Optional[str] = None) -> Iterator[dict]:
     """
     Run the hypothesis evaluation pipeline and yield progress / result dicts.
     Each yielded dict has a 'type' key: 'progress', 'result', or 'error'.
     """
-    active_conversation_id = str(uuid.uuid4())
+    active_conversation_id = conversation_id or str(uuid.uuid4())
 
     # 1. Embedding + vector cache check
     try:

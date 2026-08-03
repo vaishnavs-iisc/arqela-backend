@@ -23,9 +23,12 @@ router = APIRouter(prefix="/api/hypothesis", tags=["Hypothesis Testing"])
 # Request / Response schemas
 # ---------------------------------------------------------------------------
 
+from typing import List, Optional
+
 class HypothesisRequest(BaseModel):
     hypothesis: str
     domain: str
+    conversation_id: Optional[str] = None
 
 
 class ChatMessage(BaseModel):
@@ -49,7 +52,9 @@ def evaluate_hypothesis(req: HypothesisRequest, user_id: str = Depends(get_curre
     Streams Server-Sent Events (SSE) with progress updates and a final JSON result.
     """
     def sse_generator():
-        for event in hypothesis_service.stream_evaluation(req.hypothesis, req.domain, user_id):
+        for event in hypothesis_service.stream_evaluation(
+            req.hypothesis, req.domain, user_id, req.conversation_id
+        ):
             yield f"data: {json.dumps(event)}\n\n"
 
     return StreamingResponse(sse_generator(), media_type="text/event-stream")
