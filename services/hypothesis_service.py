@@ -262,9 +262,9 @@ def stream_conversation(conversation_id: str, new_message: str, user_id: str) ->
                 assistant_reply += content
                 yield content
     except Exception as e:
-        logger.error(f"Chat completion with '{model_to_use}' failed: {e}. Falling back to Cohere/Gemini.")
+        logger.error(f"Chat completion with '{model_to_use}' failed: {e}. Falling back to Groq.")
         try:
-            fallback_response = litellm.completion(model="cohere/command-r-plus-08-2024", messages=messages, stream=True)
+            fallback_response = litellm.completion(model="groq/llama-3.3-70b-versatile", messages=messages, stream=True)
             for chunk in fallback_response:
                 content = chunk.choices[0].delta.content
                 if content:

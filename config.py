@@ -21,7 +21,7 @@ class Config:
     PRIMARY_MODEL: str = os.getenv("PRIMARY_MODEL", "cohere/command-r-08-2024")
     JUDGE_MODEL: str = os.getenv("JUDGE_MODEL", "cohere/command-r-08-2024")
     EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "cohere/embed-english-v3.0")
-    CHAT_MODEL: str = os.getenv("CHAT_MODEL", "groq/llama-3.3-70b-versatile")
+    CHAT_MODEL: str = os.getenv("CHAT_MODEL", "gemini/gemini-1.5-flash")
     
     # Data Dimensions
     VECTOR_DIMENSION: int = 1024
