@@ -61,3 +61,6 @@ def health_check():
     """Cloud Run / load balancer readiness & liveness probe endpoint."""
     return {"status": "ok", "service": "arqela-backend"}
 
+# Trigger GitHub Actions deployment pipeline test
+
+
