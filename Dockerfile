@@ -9,7 +9,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy all backend code
 COPY . .
 
-# Hugging Face Spaces expects port 7860
-EXPOSE 7860
+# Cloud Run passes PORT environment variable (defaults to 8080)
+EXPOSE 8080
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860"]
+CMD sh -c "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"
+

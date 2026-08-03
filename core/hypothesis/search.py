@@ -149,38 +149,58 @@ def query_crossref(query: str, max_results: int = 3) -> list:
         return []
 
 
-def academic_search(query: str, domain: Optional[str] = None, max_results: int = 3) -> str:
-    """Fast academic search using PubMed, Crossref, and DDG."""
-    logger.info(f"Academic search: '{query}' (domain='{domain}')")
-    results_list: list = []
-    seen_links: set = set()
+from concurrent.futures import ThreadPoolExecutor
 
+def academic_search(query: str, domain: Optional[str] = None, max_results: int = 3) -> str:
+    """Fast academic search querying PubMed, Crossref, and DDG in parallel."""
+    logger.info(f"Academic search (parallel): '{query}' (domain='{domain}')")
+    
     domain_lower = domain.lower() if domain else ""
     is_biomedical = any(d in domain_lower for d in ["biology", "medicine", "neuroscience", "psychology"])
 
+    # Define tasks to run in parallel
+    tasks = []
     if is_biomedical:
-        for r in query_pubmed(query, max_results=max_results):
-            if r["href"] not in seen_links:
-                seen_links.add(r["href"])
-                results_list.append(r)
+        tasks.append(("pubmed", lambda: query_pubmed(query, max_results=max_results)))
+    tasks.append(("crossref", lambda: query_crossref(query, max_results=max_results)))
+    tasks.append(("ddg", lambda: ddg_html_search(query, max_results=max_results)))
 
-    if len(results_list) < max_results:
-        for r in query_crossref(query, max_results=max_results):
-            if r["href"] not in seen_links:
-                seen_links.add(r["href"])
-                results_list.append(r)
+    results_map = {}
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        future_to_source = {executor.submit(func): source for source, func in tasks}
+        for future in future_to_source:
+            source = future_to_source[future]
+            try:
+                results_map[source] = future.result(timeout=4.0)
+            except Exception as e:
+                logger.warning(f"Search source '{source}' failed: {e}")
+                results_map[source] = []
 
-    if len(results_list) < max_results:
-        for r in ddg_html_search(query, max_results=max_results):
-            if r["href"] not in seen_links:
+    # Merge results in priority order: PubMed first (for bio), then Crossref, then DDG
+    results_list = []
+    seen_links = set()
+
+    sources_in_order = []
+    if is_biomedical:
+        sources_in_order.append("pubmed")
+    sources_in_order.extend(["crossref", "ddg"])
+
+    for src in sources_in_order:
+        for r in results_map.get(src, []):
+            if r.get("href") and r["href"] not in seen_links:
                 seen_links.add(r["href"])
                 results_list.append(r)
+            if len(results_list) >= max_results:
+                break
+        if len(results_list) >= max_results:
+            break
 
     formatted = [
         f"Title: {r.get('title')}\nLink: {r.get('href')}\nContent: {r.get('body')}\n"
-        for r in results_list[:max_results + 1]
+        for r in results_list[:max_results]
     ]
     return "\n---\n".join(formatted) if formatted else f"No search results found for query: '{query}'."
+
 
 
 def web_search(query: str, max_results: int = 3) -> str:

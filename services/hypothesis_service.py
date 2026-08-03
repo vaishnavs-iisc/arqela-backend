@@ -67,7 +67,22 @@ def stream_evaluation(hypothesis: str, domain: str, user_id: str) -> Iterator[di
                 }
                 if node_name in progress_map:
                     pct, msg = progress_map[node_name]
-                    yield {"type": "progress", "node": node_name, "percentage": pct, "message": msg}
+                    yield {
+                        "type": "progress",
+                        "node": node_name,
+                        "percentage": pct,
+                        "message": msg,
+                        "partial_state": {
+                            "conversation_id": active_conversation_id,
+                            "raw_hypothesis": hypothesis,
+                            "academic_domain": domain,
+                            "core_claim": final_state.get("core_claim"),
+                            "underlying_assumptions": final_state.get("underlying_assumptions"),
+                            "causal_chain": final_state.get("causal_chain"),
+                            "supporting_evidence": final_state.get("supporting_evidence"),
+                            "counter_evidence": final_state.get("counter_evidence"),
+                        }
+                    }
     except Exception as e:
         logger.error(f"Graph stream failed: {e}")
         yield {"type": "error", "message": "An unexpected issue occurred during evaluation. Please try again."}

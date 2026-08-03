@@ -53,3 +53,11 @@ app.add_middleware(
 
 app.include_router(hypothesis_router)
 app.include_router(research_router)
+
+
+@app.get("/health", tags=["Health"])
+@app.get("/", tags=["Health"])
+def health_check():
+    """Cloud Run / load balancer readiness & liveness probe endpoint."""
+    return {"status": "ok", "service": "arqela-backend"}
+
