@@ -54,6 +54,7 @@ def stream_evaluation(hypothesis: str, domain: str, user_id: str, conversation_i
 
     initial_state = build_initial_state(hypothesis, domain)
     final_state = dict(initial_state)
+    max_pct = 5
 
     try:
         for event in hypothesis_graph.stream(initial_state):
@@ -67,23 +68,25 @@ def stream_evaluation(hypothesis: str, domain: str, user_id: str, conversation_i
                 }
                 if node_name in progress_map:
                     pct, msg = progress_map[node_name]
-                    yield {
-                        "type": "progress",
-                        "node": node_name,
-                        "percentage": pct,
-                        "message": msg,
-                        "partial_state": {
-                            "conversation_id": active_conversation_id,
-                            "raw_hypothesis": hypothesis,
-                            "academic_domain": domain,
-                            "core_claim": final_state.get("core_claim"),
-                            "underlying_assumptions": final_state.get("underlying_assumptions"),
-                            "causal_chain": final_state.get("causal_chain"),
-                            "supporting_evidence": final_state.get("supporting_evidence"),
-                            "counter_evidence": final_state.get("counter_evidence"),
-                            "companies_and_labs": final_state.get("companies_and_labs"),
+                    if pct > max_pct:
+                        max_pct = pct
+                        yield {
+                            "type": "progress",
+                            "node": node_name,
+                            "percentage": pct,
+                            "message": msg,
+                            "partial_state": {
+                                "conversation_id": active_conversation_id,
+                                "raw_hypothesis": hypothesis,
+                                "academic_domain": domain,
+                                "core_claim": final_state.get("core_claim"),
+                                "underlying_assumptions": final_state.get("underlying_assumptions"),
+                                "causal_chain": final_state.get("causal_chain"),
+                                "supporting_evidence": final_state.get("supporting_evidence"),
+                                "counter_evidence": final_state.get("counter_evidence"),
+                                "companies_and_labs": final_state.get("companies_and_labs"),
+                            }
                         }
-                    }
     except Exception as e:
         logger.error(f"Graph stream failed: {e}")
         yield {"type": "error", "message": "An unexpected issue occurred during evaluation. Please try again."}

@@ -24,7 +24,7 @@ def safe_llm_completion(model: str, messages: list, fallback_models: list = None
     if fallback_models is None:
         fallback_models = ["cohere/command-r-08-2024", "groq/llama-3.3-70b-versatile"]
 
-    kwargs.setdefault("max_tokens", 350)
+    kwargs.setdefault("max_tokens", 1500)
 
     try:
         return litellm.completion(model=model, messages=messages, timeout=25, **kwargs)
@@ -101,8 +101,8 @@ def analyze_hypothesis_node(state: HypothesisState) -> dict:
         f"Hypothesis: '{hypothesis}'\n\n"
         "You MUST return a JSON object with the following keys:\n"
         "1. 'core_claim' (string): The primary relationship or assertion.\n"
-        "2. 'underlying_assumptions' (list of strings): Implicit assumptions that must hold true. Be highly specific and granular, avoiding generic statements.\n"
-        "3. 'causal_chain' (list of strings): Detailed step-by-step sequence of how cause leads to effect. Identify exact biological, physical, or logical intermediate variables.\n"
+        "2. 'underlying_assumptions' (list of strings): Implicit assumptions that must hold true. Provide 3-5 distinct, detailed points outlining specific parameters, models, or conditions that must be assumed for this hypothesis to hold. Do not output single-word or general terms.\n"
+        "3. 'causal_chain' (list of strings): Detailed step-by-step sequence of how cause leads to effect. Provide 3-5 consecutive, highly detailed causal steps showing the mechanistic pathway and identifying exact biological, physical, or logical intermediate variables.\n"
         "4. 'advocate_keywords' (list of strings): 2-3 highly specific academic search queries for supporting literature. Formulate these as multi-word queries featuring exact biochemical, physical, or technical terms to pull high-quality literature. Avoid single-word/generic queries.\n"
         "5. 'adversary_keywords' (list of strings): 2-3 highly specific academic search queries for counter-arguments, alternate pathways, or confounding variables. Avoid generic terms and focus on technical critiques.\n"
         "6. 'advancement_keywords' (list of strings): 2-3 search queries optimized to identify real-world companies, startups, research laboratories, clinical trials, or industry/institutional initiatives working on this specific claim.\n\n"
@@ -323,7 +323,7 @@ def arbiter_node(state: HypothesisState) -> dict:
         "statistical_power_estimation (str), scientific_consensus_index (float 0.0-1.0), "
         "bias_vulnerability_score (int 1-5), evaluation_summary (str, max 250 chars), "
         "critical_weaknesses (list of 3 strings each under 100 chars), "
-        "proposed_validation_protocol (str, max 350 chars, Phase 1/2/3 layout)."
+        "proposed_validation_protocol (str, max 1000 chars, structured as a clean numbered list with Phase 1, Phase 2, and Phase 3 on separate lines with colons, e.g., 'Phase 1: Description \\n Phase 2: Description')."
     )
 
     defaults = {
