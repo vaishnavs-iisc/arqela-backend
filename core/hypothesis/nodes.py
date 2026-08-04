@@ -20,9 +20,14 @@ logger = logging.getLogger("HypothesisNodes")
 
 
 def safe_llm_completion(model: str, messages: list, fallback_models: list = None, **kwargs):
-    """Call Cohere/Groq with generous 25s timeout and max_tokens optimization."""
+    """Call Cohere/Groq/Gemini with generous 25s timeout and max_tokens optimization."""
     if fallback_models is None:
-        fallback_models = ["cohere/command-r-08-2024", "groq/llama-3.3-70b-versatile"]
+        fallback_models = [
+            "cohere/command-r-08-2024",
+            "groq/llama-3.3-70b-versatile",
+            "gemini/gemini-1.5-flash",
+            "gemini/gemini-3.5-flash"
+        ]
 
     kwargs.setdefault("max_tokens", 1500)
 

@@ -4,6 +4,8 @@ Routes call this service; the service never deals with HTTP concerns.
 """
 import uuid
 import logging
+import queue
+import threading
 from typing import Iterator, Optional
 
 from database import db_manager
@@ -26,7 +28,9 @@ logger = logging.getLogger("HypothesisService")
 def stream_evaluation(hypothesis: str, domain: str, user_id: str, conversation_id: Optional[str] = None) -> Iterator[dict]:
     """
     Run the hypothesis evaluation pipeline and yield progress / result dicts.
-    Each yielded dict has a 'type' key: 'progress', 'result', or 'error'.
+    Runs the multi-agent graph in a daemon background thread so that if the user
+    closes the tab (raising GeneratorExit), the background thread runs to completion
+    and persists the results to PostgreSQL database.
     """
     active_conversation_id = conversation_id or str(uuid.uuid4())
 
@@ -48,88 +52,109 @@ def stream_evaluation(hypothesis: str, domain: str, user_id: str, conversation_i
     except Exception as e:
         logger.error(f"Cache lookup failed: {e}")
 
-    # 2. Cache miss → run multi-agent graph with progress streaming
-    logger.info("Cache MISS — triggering multi-agent graph.")
+    # 2. Cache miss → run multi-agent graph in background thread
+    logger.info("Cache MISS — triggering multi-agent graph in background thread.")
     yield {"type": "progress", "node": "start", "percentage": 5, "message": "Initiating multi-agent scientific evaluation..."}
 
-    initial_state = build_initial_state(hypothesis, domain)
-    final_state = dict(initial_state)
-    max_pct = 5
+    q = queue.Queue()
 
-    try:
-        for event in hypothesis_graph.stream(initial_state):
-            for node_name, state_update in event.items():
-                final_state.update(state_update)
-                progress_map = {
-                    "analyze_hypothesis": (25, "Deconstructing core claims and causal assumptions..."),
-                    "advocate":           (50, "Gathering supporting evidence from academic literature..."),
-                    "adversary":          (75, "Auditing counter-arguments, biases, and confounders..."),
-                    "arbiter":            (95, "Synthesising consensus and compiling validation protocol..."),
-                }
-                if node_name in progress_map:
-                    pct, msg = progress_map[node_name]
-                    if pct > max_pct:
-                        max_pct = pct
-                        yield {
-                            "type": "progress",
-                            "node": node_name,
-                            "percentage": pct,
-                            "message": msg,
-                            "partial_state": {
-                                "conversation_id": active_conversation_id,
-                                "raw_hypothesis": hypothesis,
-                                "academic_domain": domain,
-                                "core_claim": final_state.get("core_claim"),
-                                "underlying_assumptions": final_state.get("underlying_assumptions"),
-                                "causal_chain": final_state.get("causal_chain"),
-                                "supporting_evidence": final_state.get("supporting_evidence"),
-                                "counter_evidence": final_state.get("counter_evidence"),
-                                "companies_and_labs": final_state.get("companies_and_labs"),
-                            }
-                        }
-    except Exception as e:
-        logger.error(f"Graph stream failed: {e}")
-        yield {"type": "error", "message": "An unexpected issue occurred during evaluation. Please try again."}
-        return
+    def graph_worker_thread():
+        initial_state = build_initial_state(hypothesis, domain)
+        final_state = dict(initial_state)
+        max_pct = 5
 
-    # 3. Persist to DB
-    result = {
-        "conversation_id":              active_conversation_id,
-        "raw_hypothesis":               final_state["raw_hypothesis"],
-        "academic_domain":              final_state["academic_domain"],
-        "core_claim":                   final_state["core_claim"],
-        "underlying_assumptions":       final_state["underlying_assumptions"],
-        "causal_chain":                 final_state["causal_chain"],
-        "supporting_evidence":          final_state["supporting_evidence"],
-        "counter_evidence":             final_state["counter_evidence"],
-        "vulnerability_score":          final_state["vulnerability_score"],
-        "empirical_evidence_score":     final_state["empirical_evidence_score"],
-        "logical_consistency_score":    final_state["logical_consistency_score"],
-        "confounder_vulnerability_score": final_state["confounder_vulnerability_score"],
-        "methodological_feasibility_score": final_state["methodological_feasibility_score"],
-        "expected_effect_size":         final_state["expected_effect_size"],
-        "statistical_power_estimation": final_state["statistical_power_estimation"],
-        "scientific_consensus_index":   final_state["scientific_consensus_index"],
-        "bias_vulnerability_score":     final_state["bias_vulnerability_score"],
-        "evaluation_summary":           final_state["evaluation_summary"],
-        "critical_weaknesses":          final_state["critical_weaknesses"],
-        "proposed_validation_protocol": final_state["proposed_validation_protocol"],
-        "companies_and_labs":           final_state.get("companies_and_labs", ""),
-        "agent_logs":                   final_state["agent_logs"],
-        "is_cache_hit":                 False,
-        "conversation_history":         [],
-    }
+        try:
+            for event in hypothesis_graph.stream(initial_state):
+                for node_name, state_update in event.items():
+                    final_state.update(state_update)
+                    progress_map = {
+                        "analyze_hypothesis": (25, "Deconstructing core claims and causal assumptions..."),
+                        "advocate":           (50, "Gathering supporting evidence from academic literature..."),
+                        "adversary":          (75, "Auditing counter-arguments, biases, and confounders..."),
+                        "arbiter":            (95, "Synthesising consensus and compiling validation protocol..."),
+                    }
+                    if node_name in progress_map:
+                        pct, msg = progress_map[node_name]
+                        if pct > max_pct:
+                            max_pct = pct
+                            q.put({
+                                "type": "progress",
+                                "node": node_name,
+                                "percentage": pct,
+                                "message": msg,
+                                "partial_state": {
+                                    "conversation_id": active_conversation_id,
+                                    "raw_hypothesis": hypothesis,
+                                    "academic_domain": domain,
+                                    "core_claim": final_state.get("core_claim"),
+                                    "underlying_assumptions": final_state.get("underlying_assumptions"),
+                                    "causal_chain": final_state.get("causal_chain"),
+                                    "supporting_evidence": final_state.get("supporting_evidence"),
+                                    "counter_evidence": final_state.get("counter_evidence"),
+                                    "companies_and_labs": final_state.get("companies_and_labs"),
+                                }
+                            })
+        except Exception as e:
+            logger.error(f"Background Graph stream failed: {e}")
+            q.put({"type": "error", "message": "An unexpected issue occurred during evaluation. Please try again."})
+            return
 
-    try:
-        with db_manager.get_connection() as conn:
-            _, db_conv_id = hypothesis_repo.upsert_evaluation(conn, user_id, result, query_vector)
-            if db_conv_id:
-                result["conversation_id"] = db_conv_id
-            conn.commit()
-    except Exception as e:
-        logger.error(f"Failed to store evaluation in PostgreSQL: {e}")
+        # 3. Persist to DB (Executed in the background thread, surviving client disconnects)
+        result = {
+            "conversation_id":              active_conversation_id,
+            "raw_hypothesis":               final_state["raw_hypothesis"],
+            "academic_domain":              final_state["academic_domain"],
+            "core_claim":                   final_state["core_claim"],
+            "underlying_assumptions":       final_state["underlying_assumptions"],
+            "causal_chain":                 final_state["causal_chain"],
+            "supporting_evidence":          final_state["supporting_evidence"],
+            "counter_evidence":             final_state["counter_evidence"],
+            "vulnerability_score":          final_state["vulnerability_score"],
+            "empirical_evidence_score":     final_state["empirical_evidence_score"],
+            "logical_consistency_score":    final_state["logical_consistency_score"],
+            "confounder_vulnerability_score": final_state["confounder_vulnerability_score"],
+            "methodological_feasibility_score": final_state["methodological_feasibility_score"],
+            "expected_effect_size":         final_state["expected_effect_size"],
+            "statistical_power_estimation": final_state["statistical_power_estimation"],
+            "scientific_consensus_index":   final_state["scientific_consensus_index"],
+            "bias_vulnerability_score":     final_state["bias_vulnerability_score"],
+            "evaluation_summary":           final_state["evaluation_summary"],
+            "critical_weaknesses":          final_state["critical_weaknesses"],
+            "proposed_validation_protocol": final_state["proposed_validation_protocol"],
+            "companies_and_labs":           final_state.get("companies_and_labs", ""),
+            "agent_logs":                   final_state["agent_logs"],
+            "is_cache_hit":                 False,
+            "conversation_history":         [],
+        }
 
-    yield {"type": "result", "data": result}
+        try:
+            with db_manager.get_connection() as conn:
+                _, db_conv_id = hypothesis_repo.upsert_evaluation(conn, user_id, result, query_vector)
+                if db_conv_id:
+                    result["conversation_id"] = db_conv_id
+                conn.commit()
+            logger.info(f"Background thread successfully stored evaluation report: {active_conversation_id}")
+        except Exception as e:
+            logger.error(f"Failed to store evaluation in PostgreSQL from background thread: {e}")
+
+        q.put({"type": "result", "data": result})
+
+    # Start the daemon background worker thread
+    t = threading.Thread(target=graph_worker_thread)
+    t.daemon = True
+    t.start()
+
+    # Yield items from the queue to the client. If client disconnects (raising GeneratorExit),
+    # this generator terminates but the background thread finishes and saves the data.
+    while True:
+        try:
+            item = q.get(timeout=0.5)
+            yield item
+            if item["type"] in ("result", "error"):
+                break
+        except queue.Empty:
+            if not t.is_alive():
+                break
 
 
 # ---------------------------------------------------------------------------

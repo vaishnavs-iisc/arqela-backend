@@ -32,6 +32,13 @@ logger = logging.getLogger("AppMain")
 async def lifespan(app: FastAPI):
     # Startup actions
     logger.info("Starting up FastAPI application...")
+    
+    # Check LangSmith config
+    if os.getenv("LANGCHAIN_TRACING_V2") == "true" and os.getenv("LANGCHAIN_API_KEY"):
+        logger.info("🚀 LangSmith Tracing is ENABLED for this execution.")
+    else:
+        logger.info("ℹ️ LangSmith Tracing is DISABLED. Set LANGCHAIN_TRACING_V2=true and LANGCHAIN_API_KEY in env to enable.")
+
     db_manager.init_pool()
     db_manager.init_db()
     yield
@@ -128,6 +135,28 @@ def decode_if_base64(text: str) -> str:
             pass
     return text
 
+def safe_litellm_completion(model: str, messages: list, **kwargs):
+    fallback_models = [
+        "cohere/command-r-08-2024",
+        "groq/llama-3.3-70b-versatile",
+        "gemini/gemini-1.5-flash",
+        "gemini/gemini-3.5-flash"
+    ]
+    try:
+        return litellm.completion(model=model, messages=messages, timeout=20, **kwargs)
+    except Exception as e:
+        logger.warning(f"Model '{model}' failed: {e}. Trying fallbacks {fallback_models}.")
+        
+    for fallback in fallback_models:
+        if fallback == model:
+            continue
+        try:
+            return litellm.completion(model=fallback, messages=messages, timeout=20, **kwargs)
+        except Exception as fb_err:
+            logger.warning(f"Fallback model '{fallback}' failed: {fb_err}.")
+            
+    raise RuntimeError("All configured LLM models and fallbacks are currently down.")
+
 def check_pii(text: str) -> bool:
     email_pattern = r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+'
     phone_pattern = r'\b\d{3}[-.]?\d{3}[-.]?\d{4}\b'
@@ -148,7 +177,7 @@ def check_safety_llm(query: str) -> tuple[bool, str]:
         '{"is_safe": false, "reason": "Reason for blocking"}'
     )
     try:
-        response = litellm.completion(
+        response = safe_litellm_completion(
             model=config.PRIMARY_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -232,7 +261,7 @@ def search_agent_node(state: AgentState):
     
     prompt = f"Write a single search engine query to find factual reports and summaries about: '{query}'."
     try:
-        response = litellm.completion(
+        response = safe_litellm_completion(
             model=config.PRIMARY_MODEL,
             messages=[{"role": "user", "content": prompt}]
         )
@@ -262,7 +291,7 @@ def summarize_agent_node(state: AgentState):
     )
     
     try:
-        response = litellm.completion(
+        response = safe_litellm_completion(
             model=config.PRIMARY_MODEL,
             messages=[{"role": "user", "content": prompt}]
         )
@@ -311,7 +340,7 @@ def writer_agent_node(state: AgentState):
         )
         
     try:
-        response = litellm.completion(
+        response = safe_litellm_completion(
             model=config.PRIMARY_MODEL,
             messages=[{"role": "user", "content": prompt}]
         )
@@ -346,7 +375,7 @@ def verify_agent_node(state: AgentState):
     user_prompt = f"Original Sources:\n{sources}\n\nDraft Report:\n{draft}"
     
     try:
-        response = litellm.completion(
+        response = safe_litellm_completion(
             model=config.JUDGE_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -541,7 +570,11 @@ def run_chat(req: ChatRequest):
             "is_cache_hit": final_state.get("is_cache_hit", False)
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error in chat workflow execution: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="We encountered an issue communicating with our AI models. Please try again in a moment."
+        )
 
 @app.get("/history/{session_id}")
 def get_history(session_id: str):
