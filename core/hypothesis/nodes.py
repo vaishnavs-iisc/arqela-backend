@@ -104,7 +104,8 @@ def analyze_hypothesis_node(state: HypothesisState) -> dict:
         "2. 'underlying_assumptions' (list of strings): Implicit assumptions that must hold true. Be highly specific and granular, avoiding generic statements.\n"
         "3. 'causal_chain' (list of strings): Detailed step-by-step sequence of how cause leads to effect. Identify exact biological, physical, or logical intermediate variables.\n"
         "4. 'advocate_keywords' (list of strings): 2-3 highly specific academic search queries for supporting literature. Formulate these as multi-word queries featuring exact biochemical, physical, or technical terms to pull high-quality literature. Avoid single-word/generic queries.\n"
-        "5. 'adversary_keywords' (list of strings): 2-3 highly specific academic search queries for counter-arguments, alternate pathways, or confounding variables. Avoid generic terms and focus on technical critiques.\n\n"
+        "5. 'adversary_keywords' (list of strings): 2-3 highly specific academic search queries for counter-arguments, alternate pathways, or confounding variables. Avoid generic terms and focus on technical critiques.\n"
+        "6. 'advancement_keywords' (list of strings): 2-3 search queries optimized to identify real-world companies, startups, research laboratories, clinical trials, or industry/institutional initiatives working on this specific claim.\n\n"
         "Return ONLY a valid JSON object with no explanation before or after."
     )
 
@@ -126,6 +127,7 @@ def analyze_hypothesis_node(state: HypothesisState) -> dict:
             "causal_chain": result.get("causal_chain", ["Hypothesis evaluated as a single unit"]),
             "advocate_keywords": result.get("advocate_keywords", [hypothesis]),
             "adversary_keywords": result.get("adversary_keywords", [f"critique of {hypothesis}"]),
+            "advancement_keywords": result.get("advancement_keywords", [f"{hypothesis} companies labs"]),
             "agent_logs": logs,
         }
     except Exception as e:
@@ -136,37 +138,58 @@ def analyze_hypothesis_node(state: HypothesisState) -> dict:
             "causal_chain": ["Hypothesis evaluated as a single unit"],
             "advocate_keywords": [hypothesis],
             "adversary_keywords": [f"critique of {hypothesis}"],
+            "advancement_keywords": [f"{hypothesis} companies labs"],
             "agent_logs": logs + [f"[Theory Breakdown] Error: {e}. Reverting to defaults."],
         }
 
 
 def advocate_node(state: HypothesisState) -> dict:
-    """Gather supporting literature concurrently and synthesise with Cohere Command-R Plus."""
+    """Gather supporting literature and advancements concurrently, and synthesise with Cohere Command-R Plus."""
     logger.info("Entering advocate_node (Cohere Command-R Plus)")
     core_claim = state["core_claim"]
     keywords = state["advocate_keywords"]
+    advancement_keywords = state.get("advancement_keywords", [f"{core_claim} companies labs"])
     domain = state["academic_domain"]
-    logs = ["[Node: Supporting Evidence Gatherer] Searching literature & compiling citation brief via Cohere."]
+    logs = ["[Node: Supporting Evidence & Advancements Gatherer] Searching literature, clinical trials, and active companies via Cohere."]
 
-    search_payloads = []
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        futures = {executor.submit(academic_search, kw, domain, 3): kw for kw in keywords[:2]}
-        for future in futures:
-            kw = futures[future]
+    lit_payloads = []
+    adv_payloads = []
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        # Map futures to their type and query
+        future_to_info = {}
+        for kw in keywords[:2]:
+            future_to_info[executor.submit(academic_search, kw, domain, 3)] = ("lit", kw)
+        for kw in advancement_keywords[:2]:
+            future_to_info[executor.submit(academic_search, kw, domain, 3)] = ("adv", kw)
+
+        for future in future_to_info:
+            ftype, kw = future_to_info[future]
             try:
-                res = future.result(timeout=3)
-                search_payloads.append(f"--- Search Query: '{kw}' ---\n{res}")
+                res = future.result(timeout=4)
+                payload = f"--- Search Query: '{kw}' ---\n{res}"
+                if ftype == "lit":
+                    lit_payloads.append(payload)
+                else:
+                    adv_payloads.append(payload)
             except Exception as e:
-                logger.warning(f"Search failed for keyword '{kw}': {e}")
-                search_payloads.append(f"--- Search Query: '{kw}' ---\nSearch failed: {e}")
+                logger.warning(f"Search failed for '{kw}': {e}")
+                payload = f"--- Search Query: '{kw}' ---\nSearch failed: {e}"
+                if ftype == "lit":
+                    lit_payloads.append(payload)
+                else:
+                    adv_payloads.append(payload)
 
-    all_search_data = "\n\n".join(search_payloads)
+    all_lit_data = "\n\n".join(lit_payloads)
+    all_adv_data = "\n\n".join(adv_payloads)
+
+    # 1. Synthesise supporting evidence
     custom_inst = get_domain_specific_instructions(domain)
-    prompt = (
+    prompt_lit = (
         f"You are a Research Proponent advocating for the following core claim:\n\n"
         f"Claim: '{core_claim}'\n"
         f"Domain-Specific Guidelines: {custom_inst}\n\n"
-        f"Search data from academic/literature searches:\n\n{all_search_data}\n\n"
+        f"Search data from academic/literature searches:\n\n{all_lit_data}\n\n"
         "Synthesise this into a highly supportive scientific brief. Your goal is to deliver a response of exceptional depth, far exceeding standard conversational chatbots like ChatGPT or Gemini. "
         "Rules:\n"
         "1. Avoid vague generalities or generic scientific filler. Dig deep into specific biochemical, physical, or systemic mechanisms.\n"
@@ -176,19 +199,48 @@ def advocate_node(state: HypothesisState) -> dict:
         "5. Use Markdown list format (- bullet). Never fabricate links or make up papers."
     )
 
+    # 2. Synthesise companies & labs
+    prompt_labs = (
+        f"You are a Research Analyst mapping the real-world industrial and academic landscape for:\n"
+        f"Claim: '{core_claim}'\n\n"
+        f"Search data about companies, labs, clinical trials, and advancements:\n\n{all_adv_data}\n\n"
+        "Synthesise this into a concise overview of key companies, startups, research laboratories, universities, and institutes active in this field, along with their recent key findings or clinical/technical milestones. "
+        "Rules:\n"
+        "1. Identify and list SPECIFIC companies, startups, academic labs, or research institutes working directly on or near this technology/science (e.g. 'Max Planck Institute', specific biotech startups, clinical trial centers).\n"
+        "2. State their recent findings, milestones, or current research directions. Do not write generic explanations.\n"
+        "3. Cite sources using [Title](Link) markdown links if any exist in the search data.\n"
+        "4. Write exactly 3-4 bullet points, keeping each bullet under 250 characters.\n"
+        "5. Use Markdown list format (- bullet). If search data lacks specific entities, rely on your global knowledge to name real entities working on this field."
+    )
+
     try:
-        response = safe_llm_completion(
+        # Call LLM for supporting evidence
+        res_lit = safe_llm_completion(
             model=config.ADVOCATE_MODEL,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": "user", "content": prompt_lit}],
         )
-        synthesis = response.choices[0].message.content.strip()
-        logs.append("[Supporting Evidence Gatherer] Compiled supporting scientific brief via Cohere.")
-        return {"advocate_sources": all_search_data, "supporting_evidence": synthesis, "agent_logs": logs}
-    except Exception as e:
-        logger.error(f"Advocate node failed: {e}")
+        supporting_evidence = res_lit.choices[0].message.content.strip()
+
+        # Call LLM for companies and labs
+        res_labs = safe_llm_completion(
+            model=config.ADVOCATE_MODEL,
+            messages=[{"role": "user", "content": prompt_labs}],
+        )
+        companies_and_labs = res_labs.choices[0].message.content.strip()
+
+        logs.append("[Supporting Evidence Gatherer] Compiled supporting scientific brief and active labs overview.")
         return {
-            "advocate_sources": all_search_data,
+            "advocate_sources": all_lit_data + "\n\n" + all_adv_data,
+            "supporting_evidence": supporting_evidence,
+            "companies_and_labs": companies_and_labs,
+            "agent_logs": logs,
+        }
+    except Exception as e:
+        logger.error(f"Advocate node compilation failed: {e}")
+        return {
+            "advocate_sources": all_lit_data + "\n\n" + all_adv_data,
             "supporting_evidence": "Failed to compile supporting evidence.",
+            "companies_and_labs": "Failed to compile active labs and companies.",
             "agent_logs": logs + [f"[Supporting Evidence Gatherer] Error: {e}"],
         }
 

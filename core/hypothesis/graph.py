@@ -58,6 +58,7 @@ def build_initial_state(hypothesis: str, domain: str) -> dict:
         "adversary_sources": "",
         "supporting_evidence": "",
         "counter_evidence": "",
+        "companies_and_labs": "",
         "vulnerability_score": 0,
         "empirical_evidence_score": 0,
         "logical_consistency_score": 0,

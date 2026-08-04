@@ -20,6 +20,7 @@ class HypothesisState(TypedDict):
 
     supporting_evidence: str
     counter_evidence: str
+    companies_and_labs: str
 
     vulnerability_score: int
     empirical_evidence_score: int

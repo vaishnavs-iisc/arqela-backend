@@ -95,7 +95,8 @@ class DatabaseManager:
                         ADD COLUMN IF NOT EXISTS expected_effect_size TEXT,
                         ADD COLUMN IF NOT EXISTS statistical_power_estimation TEXT,
                         ADD COLUMN IF NOT EXISTS scientific_consensus_index FLOAT,
-                        ADD COLUMN IF NOT EXISTS bias_vulnerability_score INT;
+                        ADD COLUMN IF NOT EXISTS bias_vulnerability_score INT,
+                        ADD COLUMN IF NOT EXISTS companies_and_labs TEXT;
                     """)
                     cur.execute("""
                         ALTER TABLE hypothesis_evaluations

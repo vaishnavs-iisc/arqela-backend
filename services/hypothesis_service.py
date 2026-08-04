@@ -81,6 +81,7 @@ def stream_evaluation(hypothesis: str, domain: str, user_id: str, conversation_i
                             "causal_chain": final_state.get("causal_chain"),
                             "supporting_evidence": final_state.get("supporting_evidence"),
                             "counter_evidence": final_state.get("counter_evidence"),
+                            "companies_and_labs": final_state.get("companies_and_labs"),
                         }
                     }
     except Exception as e:
@@ -110,6 +111,7 @@ def stream_evaluation(hypothesis: str, domain: str, user_id: str, conversation_i
         "evaluation_summary":           final_state["evaluation_summary"],
         "critical_weaknesses":          final_state["critical_weaknesses"],
         "proposed_validation_protocol": final_state["proposed_validation_protocol"],
+        "companies_and_labs":           final_state.get("companies_and_labs", ""),
         "agent_logs":                   final_state["agent_logs"],
         "is_cache_hit":                 False,
         "conversation_history":         [],
