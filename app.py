@@ -255,8 +255,10 @@ def summarize_agent_node(state: AgentState):
     sources = state["raw_sources"]
     
     prompt = (
-        f"You are a Research Summarizer. Aggregate and summarize these sources, highlighting "
-        f"all key facts, statistics, and dates. Be highly factual.\n\nSources:\n{sources}"
+        "You are a Senior Research Summarizer. Aggregate and summarize these sources with high academic rigor. "
+        "Highlight all key facts, specific statistics (p-values, sample sizes, effect sizes, ratios), and precise dates. "
+        "Do not provide generic or vague summaries; focus heavily on the underlying scientific and empirical details.\n\n"
+        f"Sources:\n{sources}"
     )
     
     try:
@@ -289,22 +291,23 @@ def writer_agent_node(state: AgentState):
         
     if loop == 0:
         prompt = (
-            f"You are a factual assistant. Your task is to write a clear, concise, "
-            f"conversational answer (1-2 paragraphs) on: '{query}' based on the sources.\n"
+            f"You are an expert scientific writer. Your task is to write a highly informative, detailed, "
+            f"and conversational response (2-3 paragraphs) on: '{query}' based on the sources.\n"
             f"Aggregated summary and facts:\n{summary}\n\n"
             f"Raw Sources Reference:\n{sources}\n\n"
             f"Chat History Context (if any):\n{chat_history_str}\n\n"
-            "Format the text nicely in Markdown. Do not hallucinate."
+            "Format the text nicely in Markdown. Avoid generic/vague summaries. "
+            "Quote quantitative parameters and concrete mechanistic details. Do not hallucinate."
         )
     else:
         logs.append(f"[Writer Agent] Rewriting response based on Judge critique: '{state['critique']}'")
         prompt = (
-            f"You are a factual assistant. Correct your previous response based on the critique.\n"
+            f"You are an expert scientific writer. Correct your previous response based on the critique.\n"
             f"Original Sources Reference:\n{sources}\n\n"
             f"Previous Response:\n{state['draft_report']}\n\n"
             f"Judge's Critique:\n{state['critique']}\n\n"
-            "Rewrite the response concisely, correcting all factual inaccuracies. "
-            "Ensure the response is fully accurate to the sources."
+            "Rewrite the response, correcting all factual inaccuracies and enhancing its precision. "
+            "Ensure the response is fully accurate to the sources, specific, and avoids generic statements."
         )
         
     try:
@@ -329,10 +332,10 @@ def verify_agent_node(state: AgentState):
     draft = state["draft_report"]
     
     system_prompt = (
-        "You are an expert factual Auditor. Compare the Draft Report against the Original Sources.\n"
-        "Verify every date, name, and fact.\n"
-        "Evaluate factual accuracy on a scale of 1 to 5 (5 being perfect, 1 being completely false).\n"
-        "If there are errors, explain them in the critique.\n"
+        "You are a strict, expert scientific Auditor. Compare the Draft Report against the Original Sources.\n"
+        "Verify every date, name, statistical parameter, and fact. Look for vague statements, empty summaries, or inaccuracies.\n"
+        "Evaluate factual accuracy and structural rigor on a scale of 1 to 5 (5 being perfect/rigorous, 1 being completely false or generic/vague).\n"
+        "If there are errors or if the response lacks analytical depth, explain them in the critique.\n"
         "Output your response strictly as JSON:\n"
         "{\n"
         '  "accuracy_score": int,\n'

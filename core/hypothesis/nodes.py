@@ -99,12 +99,12 @@ def analyze_hypothesis_node(state: HypothesisState) -> dict:
         f"You are a Senior Research Analyst. Deconstruct the following hypothesis within the domain of '{domain}'.\n"
         f"Domain-Specific Guidelines: {custom_inst}\n\n"
         f"Hypothesis: '{hypothesis}'\n\n"
-        "You MUST return a JSON object with:\n"
+        "You MUST return a JSON object with the following keys:\n"
         "1. 'core_claim' (string): The primary relationship or assertion.\n"
-        "2. 'underlying_assumptions' (list of strings): Implicit assumptions that must hold true.\n"
-        "3. 'causal_chain' (list of strings): Step-by-step sequence of how cause leads to effect.\n"
-        "4. 'advocate_keywords' (list of strings): 2-3 highly specific academic search queries for supporting literature.\n"
-        "5. 'adversary_keywords' (list of strings): 2-3 highly specific academic search queries for counter-arguments.\n\n"
+        "2. 'underlying_assumptions' (list of strings): Implicit assumptions that must hold true. Be highly specific and granular, avoiding generic statements.\n"
+        "3. 'causal_chain' (list of strings): Detailed step-by-step sequence of how cause leads to effect. Identify exact biological, physical, or logical intermediate variables.\n"
+        "4. 'advocate_keywords' (list of strings): 2-3 highly specific academic search queries for supporting literature. Formulate these as multi-word queries featuring exact biochemical, physical, or technical terms to pull high-quality literature. Avoid single-word/generic queries.\n"
+        "5. 'adversary_keywords' (list of strings): 2-3 highly specific academic search queries for counter-arguments, alternate pathways, or confounding variables. Avoid generic terms and focus on technical critiques.\n\n"
         "Return ONLY a valid JSON object with no explanation before or after."
     )
 
@@ -167,10 +167,13 @@ def advocate_node(state: HypothesisState) -> dict:
         f"Claim: '{core_claim}'\n"
         f"Domain-Specific Guidelines: {custom_inst}\n\n"
         f"Search data from academic/literature searches:\n\n{all_search_data}\n\n"
-        "Synthesise this into a highly supportive scientific brief. "
-        "Cite sources using [Title](Link) markdown links. Write exactly 4 bullet points. "
-        "Keep each under 250 characters. Use Markdown list format (- bullet).\n"
-        "IMPORTANT: Never fabricate links. If no valid URLs exist, omit citations."
+        "Synthesise this into a highly supportive scientific brief. Your goal is to deliver a response of exceptional depth, far exceeding standard conversational chatbots like ChatGPT or Gemini. "
+        "Rules:\n"
+        "1. Avoid vague generalities or generic scientific filler. Dig deep into specific biochemical, physical, or systemic mechanisms.\n"
+        "2. Provide quantitative and empirical precision: quote specific statistical parameters (p-values, hazard ratios, sample sizes (N), Cohen's d, confidence intervals) and experimental methodology (RCTs, cohort replication) from the search data.\n"
+        "3. Cite sources using [Title](Link) markdown links. Cite as many distinct papers/links as possible from the provided search data (at least 3-4 distinct citations if available).\n"
+        "4. Write exactly 4 bullet points, with each bullet point under 250 characters.\n"
+        "5. Use Markdown list format (- bullet). Never fabricate links or make up papers."
     )
 
     try:
@@ -217,10 +220,14 @@ def adversary_node(state: HypothesisState) -> dict:
         f"Claim: '{core_claim}'\n"
         f"Domain-Specific Guidelines: {custom_inst}\n\n"
         f"Search data regarding critiques, alternatives, and limitations:\n\n{all_search_data}\n\n"
-        "Synthesise into a counterargument brief. Cite sources using [Title](Link) links. "
-        "Write exactly 4 bullet points, each under 250 characters. "
-        "Identify confounding variables, alternative explanations, limits to generalisability.\n"
-        "IMPORTANT: Never fabricate links. If no valid URLs exist, omit citations."
+        "Synthesise this into a counterargument brief of exceptional depth, far exceeding standard conversational chatbots like ChatGPT or Gemini. "
+        "Rules:\n"
+        "1. Identify specific confounding variables, alternative explanations, and structural limits to generalisability.\n"
+        "2. Critique the methodological constraints, potential biases (selection, attrition, funding, reporting), and statistical power limits of the positive claims.\n"
+        "3. Quote specific contradictory data, statistical discrepancies, or replication failures where available.\n"
+        "4. Cite sources using [Title](Link) markdown links. Cite as many distinct papers/links as possible from the provided search data (at least 3-4 distinct citations if available).\n"
+        "5. Write exactly 4 bullet points, with each bullet point under 250 characters.\n"
+        "6. Use Markdown list format (- bullet). Never fabricate links or make up papers."
     )
 
     try:
@@ -256,6 +263,7 @@ def arbiter_node(state: HypothesisState) -> dict:
         f"Core Claim: '{core_claim}'\n\n"
         f"--- Supporting Evidence ---\n{adv_brief}\n\n"
         f"--- Counterarguments & Gaps ---\n{opp_brief}\n\n"
+        "Synthesise both sides and produce a quantified, highly rigorous evaluation that surpasses standard general-purpose models like ChatGPT or Gemini. "
         "Return ONLY a valid JSON object with these exact keys:\n"
         "vulnerability_score (int 1-5), empirical_evidence_score (int 1-5), "
         "logical_consistency_score (int 1-5), confounder_vulnerability_score (int 1-5), "
